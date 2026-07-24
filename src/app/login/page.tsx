@@ -42,7 +42,7 @@ export default function LoginPage() {
       Cookies.set('userRole', data.user.role, { expires: 7 });
       Cookies.set('userEmail', data.user.email, { expires: 7 });
 
-      if (data.user.role === 'ADMIN' || data.user.role === 'TEACHER') {
+      if (['SUPER_ADMIN', 'OWNER', 'TEACHER'].includes(data.user.role)) {
         router.push('/admin');
       } else {
         router.push('/');
