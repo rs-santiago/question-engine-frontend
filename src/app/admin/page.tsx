@@ -6,14 +6,11 @@ import Cookies from 'js-cookie';
 import { fetchApi } from '@/lib/api';
 import { 
   Plus, 
-  BookOpen, 
   CheckCircle2, 
   Sparkles, 
   ArrowLeft, 
-  LogOut, 
-  Search,
-  Trash2,
-  FileText
+  FileText,
+  Upload
 } from 'lucide-react';
 
 interface Alternative {
@@ -38,10 +35,10 @@ export default function AdminDashboard() {
   const [mounted, setMounted] = useState(false);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Modal 1: Cadastro Manual
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-
-  // Estados do Formulário de Criação
   const [statement, setStatement] = useState('');
   const [source, setSource] = useState('');
   const [difficulty, setDifficulty] = useState<'EASY' | 'MEDIUM' | 'HARD'>('MEDIUM');
@@ -54,6 +51,12 @@ export default function AdminDashboard() {
     { letter: 'D', text: '', isCorrect: false },
   ]);
 
+  // Modal 2: Importação de PDF com IA
+  const [isPdfModalOpen, setIsPdfModalOpen] = useState(false);
+  const [pdfFile, setPdfFile] = useState<File | null>(null);
+  const [pdfSource, setPdfSource] = useState('');
+  const [uploading, setUploading] = useState(false);
+
   useEffect(() => {
     setMounted(true);
   }, []);
@@ -62,8 +65,6 @@ export default function AdminDashboard() {
     if (!mounted) return;
 
     const token = Cookies.get('token');
-    const role = Cookies.get('userRole');
-
     if (!token) {
       router.push('/login');
       return;
@@ -76,6 +77,9 @@ export default function AdminDashboard() {
     try {
       setLoading(true);
       const res = await fetchApi('/admin/questions');
+      if (!res.ok) {
+        throw new Error(`Erro HTTP: ${res.status}`);
+      }
       const data = await res.json();
       if (Array.isArray(data)) {
         setQuestions(data);
@@ -87,6 +91,7 @@ export default function AdminDashboard() {
     }
   };
 
+  // Handlers do Formulário Manual
   const handleCorrectChange = (index: number) => {
     setAlternatives((prev) =>
       prev.map((alt, i) => ({
@@ -127,7 +132,7 @@ export default function AdminDashboard() {
 
       setIsModalOpen(false);
       resetForm();
-      fetchAdminQuestions(); // Recarrega a lista
+      fetchAdminQuestions();
     } catch (err) {
       console.error('Erro ao criar questão:', err);
     } finally {
@@ -149,7 +154,47 @@ export default function AdminDashboard() {
     ]);
   };
 
-  if (!mounted) return null;
+  // Handler do Upload de PDF com IA
+  const handleUploadPdf = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!pdfFile) return;
+
+    setUploading(true);
+    const formData = new FormData();
+    formData.append('file', pdfFile);
+    formData.append('sourceName', pdfSource);
+
+    try {
+      const res = await fetchApi('/admin/questions/upload-pdf', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (res.ok) {
+        alert('PDF enviado com sucesso! As questões estão sendo extraídas pela IA em segundo plano.');
+        setIsPdfModalOpen(false);
+        setPdfFile(null);
+        setPdfSource('');
+        setTimeout(() => fetchAdminQuestions(), 5000);
+      } else {
+        const errData = await res.json();
+        alert(`Erro no upload: ${errData.message || 'Falha ao enviar arquivo.'}`);
+      }
+    } catch (err) {
+      console.error('Erro ao enviar PDF:', err);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  // Garante que o SSR não renderize antes da hidratação completa no browser
+  if (!mounted) {
+    return (
+      <div suppressHydrationWarning className="min-h-screen bg-slate-950 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-brand-primary"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
@@ -169,12 +214,21 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        <button
-          onClick={() => setIsModalOpen(true)}
-          className="py-2.5 px-4 rounded-xl font-bold text-xs bg-brand-primary hover:opacity-90 text-white transition-all shadow-lg shadow-brand-primary/20 flex items-center gap-2"
-        >
-          <Plus className="w-4 h-4" /> Nova Questão Manual
-        </button>
+        <div className="flex gap-3">
+          <button
+            onClick={() => setIsPdfModalOpen(true)}
+            className="py-2.5 px-4 rounded-xl font-bold text-xs bg-purple-600 hover:bg-purple-500 text-white transition-all shadow-lg shadow-purple-600/20 flex items-center gap-2"
+          >
+            <Sparkles className="w-4 h-4" /> Importar PDF com IA
+          </button>
+          
+          <button
+            onClick={() => setIsModalOpen(true)}
+            className="py-2.5 px-4 rounded-xl font-bold text-xs bg-brand-primary hover:opacity-90 text-white transition-all shadow-lg shadow-brand-primary/20 flex items-center gap-2"
+          >
+            <Plus className="w-4 h-4" /> Nova Questão Manual
+          </button>
+        </div>
       </header>
 
       {/* Conteúdo Principal */}
@@ -209,7 +263,7 @@ export default function AdminDashboard() {
             <div className="p-12 text-center text-slate-500">Carregando acervo...</div>
           ) : questions.length === 0 ? (
             <div className="p-12 text-center text-slate-500 text-sm">
-              Nenhuma questão cadastrada ainda. Clique em "Nova Questão Manual" para adicionar.
+              Nenhuma questão cadastrada ainda. Clique em "Nova Questão Manual" ou "Importar PDF com IA" para começar.
             </div>
           ) : (
             <div className="divide-y divide-slate-800">
@@ -261,7 +315,7 @@ export default function AdminDashboard() {
         </div>
       </main>
 
-      {/* Modal de Cadastro de Questão */}
+      {/* Modal 1: Cadastro Manual de Questão */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6 space-y-6 shadow-2xl">
@@ -384,6 +438,73 @@ export default function AdminDashboard() {
                   className="px-5 py-2.5 rounded-xl font-bold text-xs bg-brand-primary hover:opacity-90 disabled:opacity-50 text-white transition-all shadow-lg shadow-brand-primary/25"
                 >
                   {submitting ? 'Salvando...' : 'Salvar Questão'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal 2: Upload e Extração de PDF com IA */}
+      {isPdfModalOpen && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-6 shadow-2xl">
+            <div className="flex justify-between items-center border-b border-slate-800 pb-4">
+              <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                <Sparkles className="w-5 h-5 text-purple-400" /> Extração Automática via IA
+              </h3>
+              <button 
+                onClick={() => setIsPdfModalOpen(false)} 
+                className="text-slate-500 hover:text-white font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleUploadPdf} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Nome do Exame / Banca</label>
+                <input
+                  type="text"
+                  required
+                  value={pdfSource}
+                  onChange={(e) => setPdfSource(e.target.value)}
+                  placeholder="Ex: Prova Simulado 2026 - Polícia Civil"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-sm text-white focus:outline-none focus:border-purple-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Arquivo PDF</label>
+                <input
+                  type="file"
+                  accept=".pdf"
+                  required
+                  onChange={(e) => setPdfFile(e.target.files?.[0] || null)}
+                  className="w-full text-xs text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-purple-600/10 file:text-purple-400 hover:file:bg-purple-600/20 cursor-pointer"
+                />
+              </div>
+
+              <div className="pt-4 flex justify-end gap-3 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setIsPdfModalOpen(false)}
+                  className="px-4 py-2.5 rounded-xl font-bold text-xs bg-slate-800 hover:bg-slate-700 text-white transition-all"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={uploading}
+                  className="px-5 py-2.5 rounded-xl font-bold text-xs bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white transition-all shadow-lg shadow-purple-600/25 flex items-center gap-2"
+                >
+                  {uploading ? (
+                    'Enviando...'
+                  ) : (
+                    <>
+                      <Upload className="w-4 h-4" /> Iniciar Extração
+                    </>
+                  )}
                 </button>
               </div>
             </form>
