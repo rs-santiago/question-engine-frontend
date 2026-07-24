@@ -1,4 +1,3 @@
-// question-engine-frontend/src/app/layout.tsx
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import { headers } from 'next/headers';
@@ -6,7 +5,7 @@ import './globals.css';
 
 const inter = Inter({ subsets: ['latin'] });
 
-// Simulação de busca de tema por Tenant (Integrado com Cache no Redis/Backend)
+// Simulação de busca de tema por Tenant
 async function getTenantTheme(host: string) {
   if (host.includes('alfa')) {
     return {
@@ -46,6 +45,7 @@ export default async function RootLayout({
   return (
     <html
       lang="pt-BR"
+      suppressHydrationWarning
       style={
         {
           '--primary-color': theme.primaryColor,
@@ -54,8 +54,8 @@ export default async function RootLayout({
       }
     >
       <body 
-        suppressHydrationWarning // <--- Adicionado para ignorar alterações de extensões no body
-        className={`${inter.className} bg-slate-50 text-slate-900 antialiased`}
+        suppressHydrationWarning
+        className={`${inter.className} bg-slate-950 text-slate-100 antialiased`}
       >
         {children}
       </body>

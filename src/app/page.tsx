@@ -1,16 +1,19 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import Cookies from 'js-cookie';
+import { fetchApi } from '@/lib/api';
 import { 
   CheckCircle2, 
   XCircle, 
   Clock, 
   Award, 
-  BookOpen, 
   ArrowRight, 
   RotateCcw,
   Sparkles,
-  HelpCircle
+  LogOut,
+  User as UserIcon,
 } from 'lucide-react';
 
 interface Alternative {
@@ -36,6 +39,8 @@ interface Performance {
 }
 
 export default function StudentDashboard() {
+  const router = useRouter();
+  const [mounted, setMounted] = useState(false);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [selectedAltId, setSelectedAltId] = useState<string | null>(null);
@@ -43,54 +48,65 @@ export default function StudentDashboard() {
   const [timer, setTimer] = useState(0);
   const [loading, setLoading] = useState(true);
   const [performance, setPerformance] = useState<Performance | null>(null);
+  const [userEmail, setUserEmail] = useState<string>('');
 
-  // Headers padrão simulando o Tenant do Aluno
-  const apiHeaders = {
-    'Content-Type': 'application/json',
-    'x-tenant-id': 'tenant-uuid-1', // Substitua pelo ID real do tenant se necessário
-  };
-
-  // Carrega as questões e o desempenho do aluno
   useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!mounted) return;
+
+    // Executa a verificação de autenticação e busca de dados apenas após a montagem no cliente
+    const email = Cookies.get('userEmail');
+    const token = Cookies.get('token');
+
+    if (!token) {
+      router.push('/login');
+      return;
+    }
+
+    if (email) {
+      setUserEmail(email);
+    }
+
     fetchQuestions();
     fetchPerformance();
-  }, []);
+  }, [mounted, router]);
 
   // Cronômetro da questão atual
   useEffect(() => {
     let interval: any;
-    if (!feedback) {
+    if (!feedback && mounted) {
       interval = setInterval(() => {
         setTimer((prev) => prev + 1);
       }, 1000);
     }
     return () => clearInterval(interval);
-  }, [feedback]);
+  }, [feedback, mounted]);
 
   const fetchQuestions = async () => {
     try {
       setLoading(true);
-      const res = await fetch('http://localhost:3000/api/v1/student-engine/questions?limit=5', {
-        headers: apiHeaders,
-      });
+      const res = await fetchApi('/student-engine/questions?limit=5');
       const data = await res.json();
-      
-      // Fallback visual caso ainda não haja questões no banco
+
       if (Array.isArray(data) && data.length > 0) {
         setQuestions(data);
       } else {
+        // Fallback visual com UUIDs válidos para passar na validação do DTO do NestJS
         setQuestions([
           {
-            id: '1',
+            id: 'd1a2b3c4-d5e6-4f7a-8b9c-0d1e2f3a4b5c', // UUID válido
             statement: 'De acordo com a Constituição Federal de 1988, o prazo de validade do concurso público é de até:',
             difficulty: 'EASY',
             isTrick: false,
             source: 'Banca CESPE / Sebraspe',
             alternatives: [
-              { id: '101', letter: 'A', text: '1 ano, prorrogável uma única vez por igual período.' },
-              { id: '102', letter: 'B', text: '2 anos, prorrogável uma vez por igual período.' },
-              { id: '103', letter: 'C', text: '3 anos, sem possibilidade de prorrogação.' },
-              { id: '104', letter: 'D', text: '4 anos, a critério da administração pública.' },
+              { id: 'a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d', letter: 'A', text: '1 ano, prorrogável uma única vez por igual período.' },
+              { id: 'b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e', letter: 'B', text: '2 anos, prorrogável uma vez por igual período.' },
+              { id: 'c3d4e5f6-a7b8-4c9d-0e1f-2a3b4c5d6e7f', letter: 'C', text: '3 anos, sem possibilidade de prorrogação.' },
+              { id: 'd4e5f6a7-b8c9-4d0e-1f2a-3b4c5d6e7f8a', letter: 'D', text: '4 anos, a critério da administração pública.' },
             ],
           },
         ]);
@@ -104,9 +120,7 @@ export default function StudentDashboard() {
 
   const fetchPerformance = async () => {
     try {
-      const res = await fetch('http://localhost:3000/api/v1/student-engine/performance', {
-        headers: apiHeaders,
-      });
+      const res = await fetchApi('/student-engine/performance');
       const data = await res.json();
       setPerformance(data);
     } catch (err) {
@@ -118,9 +132,8 @@ export default function StudentDashboard() {
     if (!selectedAltId || !currentQuestion) return;
 
     try {
-      const res = await fetch('http://localhost:3000/api/v1/student-engine/answer', {
+      const res = await fetchApi('/student-engine/answer', {
         method: 'POST',
-        headers: apiHeaders,
         body: JSON.stringify({
           questionId: currentQuestion.id,
           alternativeId: selectedAltId,
@@ -129,12 +142,17 @@ export default function StudentDashboard() {
       });
 
       const result = await res.json();
+      
+      if (!res.ok) {
+        throw new Error(result.message);
+      }
+
       setFeedback(result);
-      fetchPerformance(); // Atualiza os cards de desempenho em tempo real
+      fetchPerformance();
     } catch (err) {
-      // Mock de feedback se o backend estiver sem a questão gravada
+      // Fallback local caso a questão de teste não esteja gravada no banco
       setFeedback({
-        isCorrect: selectedAltId === '102',
+        isCorrect: selectedAltId === 'b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e', // ID da alternativa B
         explanation: 'Conforme o Art. 37, III da CF/88, o prazo é de até 2 anos, prorrogável uma vez por igual período.',
         justification: 'Resposta fundamentada na Carta Magna.',
       });
@@ -153,19 +171,26 @@ export default function StudentDashboard() {
     }
   };
 
+  const handleLogout = () => {
+    Cookies.remove('token');
+    Cookies.remove('userRole');
+    Cookies.remove('userEmail');
+    router.push('/login');
+  };
+
   const currentQuestion = questions[currentIndex];
 
-  if (loading) {
+  if (!mounted) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-900 text-white">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+      <div suppressHydrationWarning className="min-h-screen flex items-center justify-center bg-slate-950 text-white">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-brand-primary"></div>
       </div>
     );
   }
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
-      {/* Header White-Label com Cor Primária da Marca */}
+      {/* Header White-Label */}
       <header className="border-b border-slate-800 bg-slate-900/80 backdrop-blur sticky top-0 z-50 px-6 py-4 flex justify-between items-center">
         <div className="flex items-center gap-3">
           <div className="h-9 w-9 rounded-lg bg-brand-primary flex items-center justify-center text-white font-bold text-lg shadow-lg shadow-brand-primary/20">
@@ -182,15 +207,27 @@ export default function StudentDashboard() {
             <Clock className="w-4 h-4 text-brand-secondary" />
             <span>Tempo: {Math.floor(timer / 60)}m {timer % 60}s</span>
           </div>
+
+          <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-800 border border-slate-700 text-slate-300">
+            <UserIcon className="w-4 h-4 text-brand-primary" />
+            <span>{userEmail || 'Aluno'}</span>
+          </div>
+
+          <button
+            onClick={handleLogout}
+            title="Sair da Conta"
+            className="p-2 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:bg-rose-500/20 transition-all"
+          >
+            <LogOut className="w-4 h-4" />
+          </button>
         </div>
       </header>
 
       <main className="flex-1 max-w-6xl w-full mx-auto p-6 grid grid-cols-1 lg:grid-cols-4 gap-8">
-        {/* Coluna Principal: Área da Questão */}
+        {/* Área Principal da Questão */}
         <section className="lg:col-span-3 space-y-6">
           {currentQuestion && (
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl relative overflow-hidden">
-              {/* Barra Decorativa Superior com a Cor do Tenant */}
               <div className="absolute top-0 left-0 right-0 h-1 bg-brand-primary" />
 
               {/* Topo da Questão */}
@@ -246,7 +283,7 @@ export default function StudentDashboard() {
                 })}
               </div>
 
-              {/* Ações / Envio */}
+              {/* Envio / Ação */}
               {!feedback ? (
                 <button
                   disabled={!selectedAltId}
@@ -256,7 +293,7 @@ export default function StudentDashboard() {
                   Responder Questão <ArrowRight className="w-4 h-4" />
                 </button>
               ) : (
-                /* Feedback e Gabarito */
+                /* Feedback com Gabarito */
                 <div className="space-y-4 pt-4 border-t border-slate-800">
                   <div className={`p-4 rounded-xl flex items-start gap-3 border ${
                     feedback.isCorrect 
