@@ -21,6 +21,7 @@ export default function LoginPage() {
     e.preventDefault();
     setLoading(true);
     setError(null);
+    const token = localStorage.getItem('access_token');
 
     try {
       const response = await fetch('http://localhost:3000/api/v1/auth/login', {
@@ -28,6 +29,7 @@ export default function LoginPage() {
         headers: {
           'Content-Type': 'application/json',
           'x-tenant-id': '679d55f1-61f0-4bbc-97ea-3ffe4e76ed62',
+          'Authorization': `Bearer ${token}`,
         },
         body: JSON.stringify({ email, password }),
       });

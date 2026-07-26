@@ -5,8 +5,14 @@ import './globals.css';
 
 const inter = Inter({ subsets: ['latin'] });
 
-// Simulação de busca de tema por Tenant
-async function getTenantTheme(host: string) {
+interface TenantTheme {
+  name: string;
+  primaryColor: string;
+  secondaryColor: string;
+}
+
+// Simulação/Busca de tema por Tenant
+async function getTenantTheme(host: string): Promise<TenantTheme> {
   if (host.includes('alfa')) {
     return {
       name: 'Curso Alfa Preparatórios',
@@ -24,7 +30,7 @@ async function getTenantTheme(host: string) {
 
 export async function generateMetadata(): Promise<Metadata> {
   const headersList = await headers();
-  const host = headersList.get('x-tenant-host') || '';
+  const host = headersList.get('x-tenant-host') || headersList.get('host') || '';
   const theme = await getTenantTheme(host);
 
   return {
@@ -39,7 +45,7 @@ export default async function RootLayout({
   children: React.ReactNode;
 }) {
   const headersList = await headers();
-  const host = headersList.get('x-tenant-host') || '';
+  const host = headersList.get('x-tenant-host') || headersList.get('host') || '';
   const theme = await getTenantTheme(host);
 
   return (
@@ -53,9 +59,9 @@ export default async function RootLayout({
         } as React.CSSProperties
       }
     >
-      <body 
+      <body
         suppressHydrationWarning
-        className={`${inter.className} bg-slate-950 text-slate-100 antialiased`}
+        className={`${inter.className} min-h-screen bg-slate-950 text-slate-100 antialiased`}
       >
         {children}
       </body>

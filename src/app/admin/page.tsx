@@ -1,516 +1,253 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import Cookies from 'js-cookie';
+import React, { useState, useEffect, useCallback } from 'react';
+import { ImportPdfModal } from '../components/admin/ImportPdfModal';
 import { fetchApi } from '@/lib/api';
-import { 
-  Plus, 
-  CheckCircle2, 
-  Sparkles, 
-  ArrowLeft, 
-  FileText,
-  Upload
-} from 'lucide-react';
 
-interface Alternative {
+export interface Alternative {
+  id: string;
   letter: string;
   text: string;
   isCorrect: boolean;
 }
 
-interface Question {
+export interface Question {
   id: string;
   statement: string;
+  source?: string;
   difficulty: 'EASY' | 'MEDIUM' | 'HARD';
   isTrick: boolean;
-  source: string;
   explanation?: string;
-  topic?: { name: string };
   alternatives: Alternative[];
+  createdAt: string;
 }
 
-export default function AdminDashboard() {
-  const router = useRouter();
-  const [mounted, setMounted] = useState(false);
+export default function AdminDashboardPage() {
   const [questions, setQuestions] = useState<Question[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  // Modal 1: Cadastro Manual
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [statement, setStatement] = useState('');
-  const [source, setSource] = useState('');
-  const [difficulty, setDifficulty] = useState<'EASY' | 'MEDIUM' | 'HARD'>('MEDIUM');
-  const [isTrick, setIsTrick] = useState(false);
-  const [explanation, setExplanation] = useState('');
-  const [alternatives, setAlternatives] = useState<Alternative[]>([
-    { letter: 'A', text: '', isCorrect: true },
-    { letter: 'B', text: '', isCorrect: false },
-    { letter: 'C', text: '', isCorrect: false },
-    { letter: 'D', text: '', isCorrect: false },
-  ]);
-
-  // Modal 2: Importação de PDF com IA
-  const [isPdfModalOpen, setIsPdfModalOpen] = useState(false);
-  const [pdfFile, setPdfFile] = useState<File | null>(null);
-  const [pdfSource, setPdfSource] = useState('');
-  const [uploading, setUploading] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [isMounted, setIsMounted] = useState(false);
 
   useEffect(() => {
-    setMounted(true);
+    setIsMounted(true);
+  }, []);
+
+  // Busca o acervo de questões usando o fetchApi
+  const fetchQuestions = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetchApi('/admin/questions');
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(
+          errorData.message || `Erro ${response.status}: Falha ao carregar as questões do acervo.`
+        );
+      }
+
+      const data = await response.json();
+      setQuestions(data);
+    } catch (err: any) {
+      console.error('Erro ao carregar questões:', err);
+      setError(err.message || 'Erro ao conectar com o servidor.');
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
 
   useEffect(() => {
-    if (!mounted) return;
-
-    const token = Cookies.get('token');
-    if (!token) {
-      router.push('/login');
-      return;
+    if (isMounted) {
+      fetchQuestions();
     }
+  }, [fetchQuestions, isMounted]);
 
-    fetchAdminQuestions();
-  }, [mounted, router]);
+  // Exclui uma questão usando o fetchApi
+  const handleDeleteQuestion = async (id: string) => {
+    if (!confirm('Tem certeza que deseja excluir esta questão?')) return;
 
-  const fetchAdminQuestions = async () => {
-    try {
-      setLoading(true);
-      const res = await fetchApi('/admin/questions');
-      if (!res.ok) {
-        throw new Error(`Erro HTTP: ${res.status}`);
-      }
-      const data = await res.json();
-      if (Array.isArray(data)) {
-        setQuestions(data);
-      }
-    } catch (err) {
-      console.error('Erro ao buscar questões do admin:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Handlers do Formulário Manual
-  const handleCorrectChange = (index: number) => {
-    setAlternatives((prev) =>
-      prev.map((alt, i) => ({
-        ...alt,
-        isCorrect: i === index,
-      }))
-    );
-  };
-
-  const handleAlternativeTextChange = (index: number, text: string) => {
-    setAlternatives((prev) =>
-      prev.map((alt, i) => (i === index ? { ...alt, text } : alt))
-    );
-  };
-
-  const handleCreateQuestion = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSubmitting(true);
+    setDeletingId(id);
 
     try {
-      const res = await fetchApi('/admin/questions', {
-        method: 'POST',
-        body: JSON.stringify({
-          statement,
-          source,
-          difficulty,
-          isTrick,
-          explanation,
-          alternatives,
-        }),
+      const response = await fetchApi(`/admin/questions/${id}`, {
+        method: 'DELETE',
       });
 
-      if (!res.ok) {
-        const errorData = await res.json();
-        alert(`Erro ao cadastrar: ${errorData.message || 'Verifique os dados.'}`);
-        return;
+      if (!response.ok) {
+        throw new Error('Não foi possível excluir a questão.');
       }
 
-      setIsModalOpen(false);
-      resetForm();
-      fetchAdminQuestions();
-    } catch (err) {
-      console.error('Erro ao criar questão:', err);
+      setQuestions((prev) => prev.filter((q) => q.id !== id));
+    } catch (err: any) {
+      alert(err.message || 'Erro ao excluir questão.');
     } finally {
-      setSubmitting(false);
+      setDeletingId(null);
     }
   };
 
-  const resetForm = () => {
-    setStatement('');
-    setSource('');
-    setDifficulty('MEDIUM');
-    setIsTrick(false);
-    setExplanation('');
-    setAlternatives([
-      { letter: 'A', text: '', isCorrect: true },
-      { letter: 'B', text: '', isCorrect: false },
-      { letter: 'C', text: '', isCorrect: false },
-      { letter: 'D', text: '', isCorrect: false },
-    ]);
-  };
-
-  // Handler do Upload de PDF com IA
-  const handleUploadPdf = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!pdfFile) return;
-
-    setUploading(true);
-    const formData = new FormData();
-    formData.append('file', pdfFile);
-    formData.append('sourceName', pdfSource);
-
-    try {
-      const res = await fetchApi('/admin/questions/upload-pdf', {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (res.ok) {
-        alert('PDF enviado com sucesso! As questões estão sendo extraídas pela IA em segundo plano.');
-        setIsPdfModalOpen(false);
-        setPdfFile(null);
-        setPdfSource('');
-        setTimeout(() => fetchAdminQuestions(), 5000);
-      } else {
-        const errData = await res.json();
-        alert(`Erro no upload: ${errData.message || 'Falha ao enviar arquivo.'}`);
-      }
-    } catch (err) {
-      console.error('Erro ao enviar PDF:', err);
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  // Garante que o SSR não renderize antes da hidratação completa no browser
-  if (!mounted) {
-    return (
-      <div suppressHydrationWarning className="min-h-screen bg-slate-950 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-brand-primary"></div>
-      </div>
-    );
+  if (!isMounted) {
+    return null;
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
-      {/* Header Admin */}
-      <header className="border-b border-slate-800 bg-slate-900/90 backdrop-blur sticky top-0 z-40 px-6 py-4 flex justify-between items-center">
-        <div className="flex items-center gap-4">
-          <button
-            onClick={() => router.push('/')}
-            className="p-2 rounded-lg bg-slate-800 text-slate-400 hover:text-white transition-all"
-            title="Voltar para a Visão do Aluno"
-          >
-            <ArrowLeft className="w-4 h-4" />
-          </button>
+    <div className="min-h-screen bg-slate-50 p-8">
+      <div className="mx-auto max-w-6xl">
+        {/* Cabeçalho */}
+        <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="font-bold text-lg text-white leading-tight">Painel do Professor</h1>
-            <p className="text-xs text-slate-400">Gestão do Banco de Questões</p>
+            <h1 className="text-3xl font-bold text-slate-900">Painel do Professor</h1>
+            <p className="text-sm text-slate-500 mt-1">
+              Gestão do acervo de questões e importação automatizada via IA
+            </p>
+          </div>
+
+          <div className="flex gap-3">
+            <button
+              onClick={() => setIsModalOpen(true)}
+              className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 transition-colors"
+            >
+              <span>✨</span>
+              <span>Importar PDF com IA</span>
+            </button>
           </div>
         </div>
 
-        <div className="flex gap-3">
-          <button
-            onClick={() => setIsPdfModalOpen(true)}
-            className="py-2.5 px-4 rounded-xl font-bold text-xs bg-purple-600 hover:bg-purple-500 text-white transition-all shadow-lg shadow-purple-600/20 flex items-center gap-2"
-          >
-            <Sparkles className="w-4 h-4" /> Importar PDF com IA
-          </button>
-          
-          <button
-            onClick={() => setIsModalOpen(true)}
-            className="py-2.5 px-4 rounded-xl font-bold text-xs bg-brand-primary hover:opacity-90 text-white transition-all shadow-lg shadow-brand-primary/20 flex items-center gap-2"
-          >
-            <Plus className="w-4 h-4" /> Nova Questão Manual
-          </button>
-        </div>
-      </header>
-
-      {/* Conteúdo Principal */}
-      <main className="flex-1 max-w-6xl w-full mx-auto p-6 space-y-6">
-        {/* Métricas do Acervo */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5">
-            <span className="text-xs text-slate-400 font-medium">Total de Questões</span>
-            <p className="text-2xl font-bold text-white mt-1">{questions.length}</p>
+        {/* Métricas */}
+        <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">
+              Total de Questões
+            </p>
+            <p className="text-2xl font-bold text-slate-800 mt-1">{questions.length}</p>
           </div>
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5">
-            <span className="text-xs text-slate-400 font-medium">Com Pegadinhas</span>
-            <p className="text-2xl font-bold text-purple-400 mt-1">
+          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">
+              Questões com Pegadinha
+            </p>
+            <p className="text-2xl font-bold text-amber-600 mt-1">
               {questions.filter((q) => q.isTrick).length}
             </p>
           </div>
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5">
-            <span className="text-xs text-slate-400 font-medium">Status do Banco</span>
-            <p className="text-2xl font-bold text-emerald-400 mt-1">Ativo & Sincronizado</p>
+          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">
+              Status do Banco
+            </p>
+            <p className="text-2xl font-bold text-emerald-600 mt-1">Ativo & Sincronizado</p>
           </div>
         </div>
 
-        {/* Tabela de Questões */}
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
-          <div className="p-4 border-b border-slate-800 flex items-center justify-between">
-            <h3 className="font-bold text-sm text-white flex items-center gap-2">
-              <FileText className="w-4 h-4 text-brand-primary" /> Acervo de Questões
-            </h3>
+        {/* Mensagem de Erro */}
+        {error && (
+          <div className="mb-6 rounded-lg bg-red-50 p-4 text-sm text-red-700 border border-red-200">
+            {error}
           </div>
+        )}
 
-          {loading ? (
-            <div className="p-12 text-center text-slate-500">Carregando acervo...</div>
+        {/* Acervo */}
+        <div className="space-y-4">
+          <h2 className="text-xl font-bold text-slate-800 mb-4">Acervo de Questões</h2>
+
+          {isLoading ? (
+            <div className="flex flex-col items-center justify-center rounded-xl border border-slate-200 bg-white py-16">
+              <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-200 border-t-blue-600"></div>
+              <p className="mt-4 text-sm text-slate-500">Carregando acervo de questões...</p>
+            </div>
           ) : questions.length === 0 ? (
-            <div className="p-12 text-center text-slate-500 text-sm">
-              Nenhuma questão cadastrada ainda. Clique em "Nova Questão Manual" ou "Importar PDF com IA" para começar.
+            <div className="rounded-xl border border-dashed border-slate-300 bg-white p-12 text-center">
+              <p className="text-base font-semibold text-slate-700">
+                Nenhuma questão cadastrada ainda.
+              </p>
+              <p className="text-sm text-slate-500 mt-1">
+                Clique em &quot;Importar PDF com IA&quot; para começar a gerar questões
+                automaticamente.
+              </p>
             </div>
           ) : (
-            <div className="divide-y divide-slate-800">
-              {questions.map((q) => (
-                <div key={q.id} className="p-5 hover:bg-slate-800/30 transition-all space-y-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-slate-300">
-                        {q.source}
+            questions.map((question) => (
+              <div
+                key={question.id}
+                className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm transition-all hover:shadow-md"
+              >
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="rounded bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
+                      Fonte: {question.source || 'Não informada'}
+                    </span>
+                    <span
+                      className={`rounded px-2.5 py-1 text-xs font-semibold ${
+                        question.difficulty === 'EASY'
+                          ? 'bg-emerald-50 text-emerald-700'
+                          : question.difficulty === 'MEDIUM'
+                          ? 'bg-amber-50 text-amber-700'
+                          : 'bg-rose-50 text-rose-700'
+                      }`}
+                    >
+                      {question.difficulty}
+                    </span>
+                    {question.isTrick && (
+                      <span className="rounded bg-purple-50 px-2.5 py-1 text-xs font-semibold text-purple-700">
+                        ⚡ Pegadinha
                       </span>
-                      <span className={`text-xs font-bold px-2 py-0.5 rounded-md ${
-                        q.difficulty === 'EASY' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
-                        q.difficulty === 'MEDIUM' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' :
-                        'bg-rose-500/10 text-rose-400 border border-rose-500/20'
-                      }`}>
-                        {q.difficulty}
-                      </span>
-                      {q.isTrick && (
-                        <span className="text-xs font-bold px-2 py-0.5 rounded-md bg-purple-500/10 text-purple-400 border border-purple-500/20 flex items-center gap-1">
-                          <Sparkles className="w-3 h-3" /> Pegadinha
-                        </span>
-                      )}
-                    </div>
+                    )}
                   </div>
 
-                  <p className="text-sm text-slate-200 font-medium leading-relaxed">
-                    {q.statement}
-                  </p>
+                  <button
+                    onClick={() => handleDeleteQuestion(question.id)}
+                    disabled={deletingId === question.id}
+                    className="text-xs font-medium text-rose-600 hover:text-rose-800 disabled:opacity-50"
+                  >
+                    {deletingId === question.id ? 'Excluindo...' : 'Excluir'}
+                  </button>
+                </div>
 
-                  {/* Badges das Alternativas */}
-                  <div className="flex flex-wrap gap-2 pt-1">
-                    {q.alternatives?.map((alt) => (
+                <p className="mb-4 text-base font-medium text-slate-800 leading-relaxed">
+                  {question.statement}
+                </p>
+
+                <div className="space-y-2 mb-4">
+                  {question.alternatives?.map((alt) => (
+                    <div
+                      key={alt.id}
+                      className={`flex items-start gap-3 rounded-lg border p-3 text-sm transition-colors ${
+                        alt.isCorrect
+                          ? 'border-emerald-300 bg-emerald-50/50 text-emerald-900 font-medium'
+                          : 'border-slate-200 bg-slate-50/50 text-slate-700'
+                      }`}
+                    >
                       <span
-                        key={alt.letter}
-                        className={`text-xs px-2.5 py-1 rounded-lg border ${
+                        className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
                           alt.isCorrect
-                            ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-400 font-bold'
-                            : 'bg-slate-950/60 border-slate-800 text-slate-400'
+                            ? 'bg-emerald-600 text-white'
+                            : 'bg-slate-200 text-slate-600'
                         }`}
                       >
-                        {alt.letter}: {alt.text}
+                        {alt.letter}
                       </span>
-                    ))}
-                  </div>
+                      <span className="pt-0.5">{alt.text}</span>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+
+                {question.explanation && (
+                  <div className="rounded-lg bg-blue-50/60 p-3.5 border border-blue-100 text-xs text-blue-900">
+                    <span className="font-bold">Resolução/Explicação: </span>
+                    {question.explanation}
+                  </div>
+                )}
+              </div>
+            ))
           )}
         </div>
-      </main>
+      </div>
 
-      {/* Modal 1: Cadastro Manual de Questão */}
-      {isModalOpen && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6 space-y-6 shadow-2xl">
-            <div className="flex justify-between items-center border-b border-slate-800 pb-4">
-              <h3 className="text-lg font-bold text-white">Cadastrar Nova Questão</h3>
-              <button
-                onClick={() => setIsModalOpen(false)}
-                className="text-slate-500 hover:text-white text-xl font-bold"
-              >
-                ✕
-              </button>
-            </div>
-
-            <form onSubmit={handleCreateQuestion} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Enunciado da Questão</label>
-                <textarea
-                  required
-                  rows={3}
-                  value={statement}
-                  onChange={(e) => setStatement(e.target.value)}
-                  placeholder="Digite o texto principal da questão..."
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-brand-primary"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Banca / Fonte</label>
-                  <input
-                    type="text"
-                    required
-                    value={source}
-                    onChange={(e) => setSource(e.target.value)}
-                    placeholder="Ex: Banca CESPE / Sebraspe"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-sm text-white focus:outline-none focus:border-brand-primary"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Dificuldade</label>
-                  <select
-                    value={difficulty}
-                    onChange={(e) => setDifficulty(e.target.value as any)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-sm text-white focus:outline-none focus:border-brand-primary"
-                  >
-                    <option value="EASY">Fácil</option>
-                    <option value="MEDIUM">Média</option>
-                    <option value="HARD">Difícil</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2 pt-2">
-                <input
-                  type="checkbox"
-                  id="isTrick"
-                  checked={isTrick}
-                  onChange={(e) => setIsTrick(e.target.checked)}
-                  className="rounded bg-slate-950 border-slate-800 text-brand-primary focus:ring-0"
-                />
-                <label htmlFor="isTrick" className="text-xs text-slate-300 font-medium cursor-pointer">
-                  Marcar como "Pegadinha" (Sinalizar atenção especial ao aluno)
-                </label>
-              </div>
-
-              {/* Seção de Alternativas */}
-              <div className="space-y-3 pt-4 border-t border-slate-800">
-                <label className="block text-xs font-semibold text-slate-300">
-                  Alternativas (Marque o botão ao lado da alternativa CORRETA)
-                </label>
-
-                {alternatives.map((alt, idx) => (
-                  <div key={alt.letter} className="flex items-center gap-3">
-                    <input
-                      type="radio"
-                      name="correctAlternative"
-                      checked={alt.isCorrect}
-                      onChange={() => handleCorrectChange(idx)}
-                      className="text-emerald-500 focus:ring-0 cursor-pointer"
-                    />
-                    <span className="font-bold text-xs text-slate-400 w-4">{alt.letter}</span>
-                    <input
-                      type="text"
-                      required
-                      value={alt.text}
-                      onChange={(e) => handleAlternativeTextChange(idx, e.target.value)}
-                      placeholder={`Texto da alternativa ${alt.letter}...`}
-                      className="flex-1 bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-sm text-white focus:outline-none focus:border-brand-primary"
-                    />
-                  </div>
-                ))}
-              </div>
-
-              {/* Explicação do Gabarito */}
-              <div className="pt-2">
-                <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  Explicação do Gabarito / Fundamentação Legal
-                </label>
-                <textarea
-                  rows={2}
-                  value={explanation}
-                  onChange={(e) => setExplanation(e.target.value)}
-                  placeholder="Justificativa apresentada ao aluno após responder..."
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-brand-primary"
-                />
-              </div>
-
-              <div className="pt-4 flex justify-end gap-3 border-t border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2.5 rounded-xl font-bold text-xs bg-slate-800 hover:bg-slate-700 text-white transition-all"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="px-5 py-2.5 rounded-xl font-bold text-xs bg-brand-primary hover:opacity-90 disabled:opacity-50 text-white transition-all shadow-lg shadow-brand-primary/25"
-                >
-                  {submitting ? 'Salvando...' : 'Salvar Questão'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Modal 2: Upload e Extração de PDF com IA */}
-      {isPdfModalOpen && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-6 shadow-2xl">
-            <div className="flex justify-between items-center border-b border-slate-800 pb-4">
-              <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                <Sparkles className="w-5 h-5 text-purple-400" /> Extração Automática via IA
-              </h3>
-              <button 
-                onClick={() => setIsPdfModalOpen(false)} 
-                className="text-slate-500 hover:text-white font-bold"
-              >
-                ✕
-              </button>
-            </div>
-
-            <form onSubmit={handleUploadPdf} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Nome do Exame / Banca</label>
-                <input
-                  type="text"
-                  required
-                  value={pdfSource}
-                  onChange={(e) => setPdfSource(e.target.value)}
-                  placeholder="Ex: Prova Simulado 2026 - Polícia Civil"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-sm text-white focus:outline-none focus:border-purple-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Arquivo PDF</label>
-                <input
-                  type="file"
-                  accept=".pdf"
-                  required
-                  onChange={(e) => setPdfFile(e.target.files?.[0] || null)}
-                  className="w-full text-xs text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-purple-600/10 file:text-purple-400 hover:file:bg-purple-600/20 cursor-pointer"
-                />
-              </div>
-
-              <div className="pt-4 flex justify-end gap-3 border-t border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setIsPdfModalOpen(false)}
-                  className="px-4 py-2.5 rounded-xl font-bold text-xs bg-slate-800 hover:bg-slate-700 text-white transition-all"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={uploading}
-                  className="px-5 py-2.5 rounded-xl font-bold text-xs bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white transition-all shadow-lg shadow-purple-600/25 flex items-center gap-2"
-                >
-                  {uploading ? (
-                    'Enviando...'
-                  ) : (
-                    <>
-                      <Upload className="w-4 h-4" /> Iniciar Extração
-                    </>
-                  )}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      <ImportPdfModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        onSuccess={fetchQuestions}
+      />
     </div>
   );
 }
